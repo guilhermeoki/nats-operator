@@ -47,10 +47,11 @@ const (
 )
 
 const (
-	LabelAppKey            = "app"
-	LabelAppValue          = "nats"
-	LabelClusterNameKey    = "nats_cluster"
-	LabelClusterVersionKey = "nats_version"
+	LabelAppKey                 = "app"
+	LabelAppValue               = "nats"
+	LabelClusterNameKey         = "nats_cluster"
+	LabelClusterVersionKey      = "nats_version"
+	NATSPrometheusExporterImage = os.Getenv("NATS_PROMETHEUS_EXPORTER_IMAGE")
 )
 
 func GetNATSVersion(pod *v1.Pod) string {
@@ -367,8 +368,16 @@ func NewNatsPodSpec(clusterName string, cs spec.ClusterSpec, owner metav1.OwnerR
 	volumeMount := newNatsConfigMapVolumeMount()
 	volumeMounts = append(volumeMounts, volumeMount)
 
-	container := natsPodContainer(clusterName, cs.Version)
-	container = containerWithLivenessProbe(container, natsLivenessProbe())
+	natsContainer := natsPodContainer(clusterName, cs.Version)
+	natsContainer = containerWithLivenessProbe(natsContainer, natsLivenessProbe())
+
+	natsPrometheusExporterContainer := natsExporterPodContainer(clusterName)
+	exporterCmd := []string{
+		"/prometheus-nats-exporter",
+		"-varz",
+		fmt.Sprintf("http://localhost:%d", constants.MonitoringPort),
+	}
+	natsPrometheusExporterContainer.Command = exporterCmd
 
 	// In case TLS was enabled as part of the NATS cluster
 	// configuration then should include the configuration here.
@@ -389,10 +398,10 @@ func NewNatsPodSpec(clusterName string, cs spec.ClusterSpec, owner metav1.OwnerR
 			volumeMounts = append(volumeMounts, volumeMount)
 		}
 	}
-	container.VolumeMounts = volumeMounts
+	natsContainer.VolumeMounts = volumeMounts
 
 	if cs.Pod != nil {
-		container = containerWithRequirements(container, cs.Pod.Resources)
+		natsContainer = containerWithRequirements(natsContainer, cs.Pod.Resources)
 	}
 	name := UniquePodName()
 
@@ -402,7 +411,7 @@ func NewNatsPodSpec(clusterName string, cs spec.ClusterSpec, owner metav1.OwnerR
 		"-c",
 		constants.ConfigFilePath,
 	}
-	container.Command = cmd
+	natsContainer.Command = cmd
 
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -413,7 +422,7 @@ func NewNatsPodSpec(clusterName string, cs spec.ClusterSpec, owner metav1.OwnerR
 		Spec: v1.PodSpec{
 			Hostname:      name,
 			Subdomain:     ManagementServiceName(clusterName),
-			Containers:    []v1.Container{container},
+			Containers:    []v1.Container{natsContainer, natsPrometheusExporterContainer},
 			RestartPolicy: v1.RestartPolicyNever,
 			Volumes:       volumes,
 		},

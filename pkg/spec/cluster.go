@@ -73,6 +73,8 @@ type ClusterSpec struct {
 	// If version is not set, default is "1.0.4".
 	Version string `json:"version"`
 
+	ExporterVersion string `json:"exporterVersion"`
+
 	// Paused is to pause the control of the operator for the cluster.
 	Paused bool `json:"paused,omitempty"`
 
