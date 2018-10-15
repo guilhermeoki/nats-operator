@@ -38,6 +38,8 @@ type NatsClusterList struct {
 
 // NatsCluster is a NATS cluster.
 //
+// +genclient
+// +genclient:noStatus
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type NatsCluster struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -71,6 +73,8 @@ type ClusterSpec struct {
 	// Only NATS released versions are supported: https://github.com/nats-io/gnatsd/releases
 	//
 	Version string `json:"version"`
+
+	ExporterVersion string `json:"exporterVersion"`
 
 	// Paused is to pause the control of the operator for the cluster.
 	Paused bool `json:"paused,omitempty"`
@@ -123,17 +127,38 @@ type PodPolicy struct {
 	Tolerations []v1.Toleration `json:"tolerations,omitempty"`
 
 	// List of environment variables to set in the NATS container.
-	// This is used to configure NATS process. NATS cluster cannot be created, when
-	// bad environment variables are provided.
-	// This field cannot be updated.
 	NatsEnv []v1.EnvVar `json:"natsEnv,omitempty"`
+
+	// EnableConfigReload attaches a sidecar to each NATS Server
+	// that will signal the server whenever the configuration is updated.
+	EnableConfigReload bool `json:"enableConfigReload,omitempty"`
+
+	// ReloaderImage is the image to use for the reloader.
+	ReloaderImage string `json:"reloaderImage,omitempty"`
+
+	// ReloaderImageTag is the tag of the reloader image.
+	ReloaderImageTag string `json:"reloaderImageTag,omitempty"`
+
+	// ReloaderImagePullPolicy is the pull policy for the reloader image.
+	ReloaderImagePullPolicy string `json:"reloaderImagePullPolicy,omitempty"`
 }
 
 // AuthConfig is the authorization configuration for
 // user permissions in the cluster.
 type AuthConfig struct {
-	ClientsAuthSecret  string `json:"clientsAuthSecret,omitempty"`
-	ClientsAuthTimeout int    `json:"clientsAuthTimeout,omitempty"`
+	// EnableServiceAccounts makes the operator lookup for mappings among
+	// Kubernetes ServiceAccounts and NatsServiceRoles to issue tokens that
+	// can be used to authenticate against a NATS cluster with authorization
+	// following the permissions set for the role.
+	EnableServiceAccounts bool `json:"enableServiceAccounts,omitempty"`
+
+	// ClientsAuthSecret is the secret containing the explicit authorization
+	// configuration in JSON.
+	ClientsAuthSecret string `json:"clientsAuthSecret,omitempty"`
+
+	// ClientsAuthTimeout is the time in seconds that the NATS server will
+	// allow to clients to send their auth credentials.
+	ClientsAuthTimeout int `json:"clientsAuthTimeout,omitempty"`
 }
 
 func (c *ClusterSpec) Validate() error {

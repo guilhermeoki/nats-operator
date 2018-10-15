@@ -26,6 +26,7 @@ import (
 
 	"github.com/nats-io/nats-operator/pkg/cluster"
 	"github.com/nats-io/nats-operator/pkg/spec"
+	natsalphav2client "github.com/nats-io/nats-operator/pkg/typed-client/v1alpha2/typed/pkg/spec"
 	kubernetesutil "github.com/nats-io/nats-operator/pkg/util/kubernetes"
 	"github.com/nats-io/nats-operator/pkg/util/probe"
 
@@ -71,6 +72,7 @@ type Config struct {
 	PVProvisioner  string
 	KubeCli        corev1client.CoreV1Interface
 	KubeExtCli     apiextensionsclient.Interface
+	OperatorCli    natsalphav2client.PkgSpecInterface
 }
 
 func (c *Config) Validate() error {
@@ -222,22 +224,18 @@ func (c *Controller) makeClusterConfig() cluster.Config {
 	return cluster.Config{
 		ServiceAccount: c.Config.ServiceAccount,
 		KubeCli:        c.KubeCli,
+		OperatorCli:    c.OperatorCli,
 	}
 }
 
 func (c *Controller) initResource() (string, error) {
 	watchVersion := "0"
 	err := c.initCRD()
+	if err == kubernetesutil.ErrCRDAlreadyExists {
+		return c.findAllClusters()
+	}
 	if err != nil {
-		if kubernetesutil.IsKubernetesResourceAlreadyExistError(err) {
-			// CRD has been initialized before. We need to recover existing cluster.
-			watchVersion, err = c.findAllClusters()
-			if err != nil {
-				return "", err
-			}
-		} else {
-			return "", fmt.Errorf("fail to create CRD: %v", err)
-		}
+		return "", fmt.Errorf("fail to create CRD: %v", err)
 	}
 
 	return watchVersion, nil
@@ -281,7 +279,9 @@ func (c *Controller) watch(watchVersion string) (<-chan *Event, <-chan error) {
 			for {
 				ev, st, err := pollEvent(decoder)
 				if err != nil {
-					if err == io.EOF { // apiserver will close stream periodically
+					// API Server will close stream periodically so schedule a reconnect,
+					// also recover in case connection was broken for some reason.
+					if err == io.EOF || err == io.ErrUnexpectedEOF {
 						c.logger.Info("apiserver closed watch stream, retrying after 5s...")
 						time.Sleep(5 * time.Second)
 						break

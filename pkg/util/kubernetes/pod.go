@@ -27,9 +27,8 @@ import (
 )
 
 // natsPodContainer returns a NATS server pod container spec.
-func natsPodContainer(clusterName, version string) v1.Container {
-	// TODO add TLS, auth support, debug and tracing
-	c := v1.Container{
+func natsPodContainer(clusterName string, version string) v1.Container {
+	return v1.Container{
 		Env: []v1.EnvVar{
 			{
 				Name:  "SVC",
@@ -56,6 +55,37 @@ func natsPodContainer(clusterName, version string) v1.Container {
 			{
 				Name:          "monitoring",
 				ContainerPort: int32(constants.MonitoringPort),
+				Protocol:      v1.ProtocolTCP,
+			},
+		},
+	}
+}
+
+// reloaderContainer returns a NATS server pod container spec.
+func natsPodReloaderContainer(image, tag, pullPolicy string) v1.Container {
+	return v1.Container{
+		Name:            "reloader",
+		Image:           fmt.Sprintf("%s:%s", image, tag),
+		ImagePullPolicy: v1.PullPolicy(pullPolicy),
+		Command: []string{
+			"nats-server-config-reloader",
+			"-config",
+			constants.ConfigFilePath,
+			"-pid",
+			constants.PidFilePath,
+		},
+	}
+}
+
+// natsExporterPodContainer returns a NATS exporter pod container spec.
+func natsExporterPodContainer(clusterName string) v1.Container {
+	c := v1.Container{
+		Name:  "prometheus-exporter",
+		Image: NATSPrometheusExporterImage,
+		Ports: []v1.ContainerPort{
+			{
+				Name:          "prometheus",
+				ContainerPort: int32(constants.NatsPrometheusExporterPort),
 				Protocol:      v1.ProtocolTCP,
 			},
 		},
